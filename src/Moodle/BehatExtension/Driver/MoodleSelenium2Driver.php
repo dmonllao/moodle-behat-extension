@@ -95,63 +95,6 @@ class MoodleSelenium2Driver extends Selenium2Driver
     }
 
     /**
-     * Drag one element onto another.
-     *
-     * Override the original one to give YUI drag & drop
-     * time to consider it a valid drag & drop. It will need
-     * more changes in future to properly adapt to how YUI dd
-     * component behaves.
-     *
-     * @param   string  $sourceXpath
-     * @param   string  $destinationXpath
-     */
-    public function dragTo($sourceXpath, $destinationXpath)
-    {
-        $source      = $this->getWebDriverSession()->element('xpath', $sourceXpath);
-        $destination = $this->getWebDriverSession()->element('xpath', $destinationXpath);
-
-        // TODO: MDL-39727 This method requires improvements according to the YUI drag and drop component.
-
-        $this->getWebDriverSession()->moveto(array(
-            'element' => $source->getID()
-        ));
-
-        $script = <<<JS
-(function (element) {
-    var event = document.createEvent("HTMLEvents");
-
-    event.initEvent("dragstart", true, true);
-    event.dataTransfer = {};
-
-    element.dispatchEvent(event);
-}({{ELEMENT}}));
-JS;
-        $this->withSyn()->executeJsOnXpath($sourceXpath, $script);
-
-        $this->getWebDriverSession()->buttondown();
-        $this->getWebDriverSession()->moveto(array(
-            'element' => $destination->getID()
-        ));
-
-        // We add a 2 seconds wait to make YUI dd happy.
-        $this->wait(2 * 1000, false);
-
-        $this->getWebDriverSession()->buttonup();
-
-        $script = <<<JS
-(function (element) {
-    var event = document.createEvent("HTMLEvents");
-
-    event.initEvent("drop", true, true);
-    event.dataTransfer = {};
-
-    element.dispatchEvent(event);
-}({{ELEMENT}}));
-JS;
-        $this->withSyn()->executeJsOnXpath($destinationXpath, $script);
-    }
-
-    /**
      * Drag one element onto another with the Syn.drag() function.
      *
      * Add a new function for elements which use the Moodle
@@ -161,10 +104,10 @@ JS;
      * @param   string  $sourceXpath
      * @param   string  $destinationXpath
      */
-    public function dragToWithHandle($sourceXpath, $destinationXpath)
+    public function dragTo($sourceXpath, $destinationXpath)
     {
         // Get the id of the destination element - the drop target
-        // either has an ID or has gotten a YUIid
+        // either has an ID or has gotten a YUI id.
         $toID = $this->getAttribute($destinationXpath, 'id');
 
         // Set the source (from) element via the executeJsOnXpath call.
@@ -174,13 +117,18 @@ JS;
         // Set the parameters for the Syn.drag function with the
         // calculated values. Set the drop point to the middle width
         // and third height of the drop target. Get the DOM node from
-        // the YUI node for the third parameter - the element which is draged.
+        // the YUI node for the third parameter - the element which is dragged.
         $script = <<<JS
 (function (element) {
     var Yfrom = Y.one(element),
         YdragHandle = Yfrom.one('.moodle-core-dragdrop-draghandle'),
         Yto = Y.one('#{$toID}'),
         _toRegion = Yto.getAttribute('data-blockregion');
+
+    // Returning false if the provided element doesn't have a draggable child.
+    if (!YdragHandle) {
+        return false;
+    }
 
     // If the target region is a block region and is empty
     // and therefore hidden make the target region visible
@@ -203,20 +151,25 @@ JS;
             from: {pageX: _from[0] + 5, pageY: _from[1] + 5},
             to: {pageX: Math.floor(_to[0] + _toW / 2), pageY: Math.floor(_to[1] + _toH / 3)},
             duration: 500
-
         },
         Yfrom.getDOMNode()
     );
+
+    return true;
 }({{ELEMENT}}));
 JS;
-        // Wait 2 seconds to give YUI time to initialize drag and drop
+        // Wait 2 seconds to give YUI time to initialize drag and drop.
         $this->wait(2000, null);
 
-        $this->withSyn()->executeJsOnXpath($sourceXpath, $script);
+        if (!$success = $this->withSyn()->executeJsOnXpath($sourceXpath, $script)) {
+            return false;
+        }
 
         // Wait 1 second to give Syn time to move the element and
-        // YUI time to handle the drop
+        // YUI time to handle the drop.
         $this->wait(1000, null);
+
+        return true;
     }
 
     /**
